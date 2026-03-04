@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useMemo } from "react";
+import { useRef, useState, useMemo, useEffect } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Environment, ContactShadows, Float, PresentationControls, Text } from "@react-three/drei";
 import * as THREE from "three";
@@ -18,16 +18,106 @@ const materialMod = new THREE.MeshStandardMaterial({ color: COLOR_MOD, roughness
 const materialAlpha = new THREE.MeshStandardMaterial({ color: COLOR_ALPHA, roughness: 0.4, metalness: 0.1 });
 const materialKnob = new THREE.MeshStandardMaterial({ color: COLOR_BASE, roughness: 0.2, metalness: 0.9 });
 
-// Layout Definition (75% Keyboard)
-type KeyDef = { l: string; w: number; m?: boolean; k?: boolean };
+// Global state for pressed keys
+const pressedKeys = new Set<string>();
+
+// Procedural Thock Sound Generator (Web Audio API)
+function playThock() {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!(window as any).audioCtx) {
+      (window as any).audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    const ctx = (window as any).audioCtx;
+    if (ctx.state === 'suspended') ctx.resume();
+    
+    const t = ctx.currentTime;
+    
+    // Low thud (body of the switch)
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150, t);
+    osc.frequency.exponentialRampToValueAtTime(50, t + 0.05);
+    
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.8, t + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.1);
+
+    // High click (plastic bottom out)
+    const clickOsc = ctx.createOscillator();
+    const clickGain = ctx.createGain();
+    
+    clickOsc.type = 'triangle';
+    clickOsc.frequency.setValueAtTime(300, t);
+    clickOsc.frequency.exponentialRampToValueAtTime(40, t + 0.03);
+    
+    clickGain.gain.setValueAtTime(0, t);
+    clickGain.gain.linearRampToValueAtTime(0.2, t + 0.002);
+    clickGain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+    
+    clickOsc.connect(clickGain);
+    clickGain.connect(ctx.destination);
+    
+    clickOsc.start(t);
+    clickOsc.stop(t + 0.05);
+  } catch (e) {
+    // Ignore audio errors if context fails
+  }
+}
+
+// Layout Definition (75% Keyboard) with Event Codes
+type KeyDef = { l: string; w: number; m?: boolean; k?: boolean; c?: string };
 const layout: KeyDef[][] = [
-  [{l:'Esc', w:1, m:true}, {l:'F1', w:1, m:true}, {l:'F2', w:1, m:true}, {l:'F3', w:1, m:true}, {l:'F4', w:1, m:true}, {l:'F5', w:1, m:true}, {l:'F6', w:1, m:true}, {l:'F7', w:1, m:true}, {l:'F8', w:1, m:true}, {l:'F9', w:1, m:true}, {l:'F10', w:1, m:true}, {l:'F11', w:1, m:true}, {l:'F12', w:1, m:true}, {l:'Del', w:1, m:true}, {l:'', w:1, m:true, k:true}],
-  [{l:'~', w:1, m:true}, {l:'1', w:1}, {l:'2', w:1}, {l:'3', w:1}, {l:'4', w:1}, {l:'5', w:1}, {l:'6', w:1}, {l:'7', w:1}, {l:'8', w:1}, {l:'9', w:1}, {l:'0', w:1}, {l:'-', w:1}, {l:'+', w:1}, {l:'Backspace', w:2, m:true}],
-  [{l:'Tab', w:1.5, m:true}, {l:'Q', w:1}, {l:'W', w:1}, {l:'E', w:1}, {l:'R', w:1}, {l:'T', w:1}, {l:'Y', w:1}, {l:'U', w:1}, {l:'I', w:1}, {l:'O', w:1}, {l:'P', w:1}, {l:'[', w:1}, {l:']', w:1}, {l:'\\', w:1.5, m:true}],
-  [{l:'Caps', w:1.75, m:true}, {l:'A', w:1}, {l:'S', w:1}, {l:'D', w:1}, {l:'F', w:1}, {l:'G', w:1}, {l:'H', w:1}, {l:'J', w:1}, {l:'K', w:1}, {l:'L', w:1}, {l:';', w:1}, {l:'"', w:1}, {l:'Enter', w:2.25, m:true}],
-  [{l:'Shift', w:2.25, m:true}, {l:'Z', w:1}, {l:'X', w:1}, {l:'C', w:1}, {l:'V', w:1}, {l:'B', w:1}, {l:'N', w:1}, {l:'M', w:1}, {l:'<', w:1}, {l:'>', w:1}, {l:'?', w:1}, {l:'Shift', w:1.75, m:true}, {l:'↑', w:1, m:true}],
-  [{l:'Ctrl', w:1.25, m:true}, {l:'Win', w:1.25, m:true}, {l:'Alt', w:1.25, m:true}, {l:'', w:6.25, m:false}, {l:'Alt', w:1, m:true}, {l:'Fn', w:1, m:true}, {l:'←', w:1, m:true}, {l:'↓', w:1, m:true}, {l:'→', w:1, m:true}]
+  [{l:'Esc', w:1, m:true, c:'Escape'}, {l:'F1', w:1, m:true, c:'F1'}, {l:'F2', w:1, m:true, c:'F2'}, {l:'F3', w:1, m:true, c:'F3'}, {l:'F4', w:1, m:true, c:'F4'}, {l:'F5', w:1, m:true, c:'F5'}, {l:'F6', w:1, m:true, c:'F6'}, {l:'F7', w:1, m:true, c:'F7'}, {l:'F8', w:1, m:true, c:'F8'}, {l:'F9', w:1, m:true, c:'F9'}, {l:'F10', w:1, m:true, c:'F10'}, {l:'F11', w:1, m:true, c:'F11'}, {l:'F12', w:1, m:true, c:'F12'}, {l:'Del', w:1, m:true, c:'Delete'}, {l:'', w:1, m:true, k:true}],
+  [{l:'~', w:1, m:true, c:'Backquote'}, {l:'1', w:1, c:'Digit1'}, {l:'2', w:1, c:'Digit2'}, {l:'3', w:1, c:'Digit3'}, {l:'4', w:1, c:'Digit4'}, {l:'5', w:1, c:'Digit5'}, {l:'6', w:1, c:'Digit6'}, {l:'7', w:1, c:'Digit7'}, {l:'8', w:1, c:'Digit8'}, {l:'9', w:1, c:'Digit9'}, {l:'0', w:1, c:'Digit0'}, {l:'-', w:1, c:'Minus'}, {l:'+', w:1, c:'Equal'}, {l:'Backspace', w:2, m:true, c:'Backspace'}],
+  [{l:'Tab', w:1.5, m:true, c:'Tab'}, {l:'Q', w:1, c:'KeyQ'}, {l:'W', w:1, c:'KeyW'}, {l:'E', w:1, c:'KeyE'}, {l:'R', w:1, c:'KeyR'}, {l:'T', w:1, c:'KeyT'}, {l:'Y', w:1, c:'KeyY'}, {l:'U', w:1, c:'KeyU'}, {l:'I', w:1, c:'KeyI'}, {l:'O', w:1, c:'KeyO'}, {l:'P', w:1, c:'KeyP'}, {l:'[', w:1, c:'BracketLeft'}, {l:']', w:1, c:'BracketRight'}, {l:'\\', w:1.5, m:true, c:'Backslash'}],
+  [{l:'Caps', w:1.75, m:true, c:'CapsLock'}, {l:'A', w:1, c:'KeyA'}, {l:'S', w:1, c:'KeyS'}, {l:'D', w:1, c:'KeyD'}, {l:'F', w:1, c:'KeyF'}, {l:'G', w:1, c:'KeyG'}, {l:'H', w:1, c:'KeyH'}, {l:'J', w:1, c:'KeyJ'}, {l:'K', w:1, c:'KeyK'}, {l:'L', w:1, c:'KeyL'}, {l:';', w:1, c:'Semicolon'}, {l:'"', w:1, c:'Quote'}, {l:'Enter', w:2.25, m:true, c:'Enter'}],
+  [{l:'Shift', w:2.25, m:true, c:'ShiftLeft'}, {l:'Z', w:1, c:'KeyZ'}, {l:'X', w:1, c:'KeyX'}, {l:'C', w:1, c:'KeyC'}, {l:'V', w:1, c:'KeyV'}, {l:'B', w:1, c:'KeyB'}, {l:'N', w:1, c:'KeyN'}, {l:'M', w:1, c:'KeyM'}, {l:'<', w:1, c:'Comma'}, {l:'>', w:1, c:'Period'}, {l:'?', w:1, c:'Slash'}, {l:'Shift', w:1.75, m:true, c:'ShiftRight'}, {l:'↑', w:1, m:true, c:'ArrowUp'}],
+  [{l:'Ctrl', w:1.25, m:true, c:'ControlLeft'}, {l:'Win', w:1.25, m:true, c:'MetaLeft'}, {l:'Alt', w:1.25, m:true, c:'AltLeft'}, {l:'', w:6.25, m:false, c:'Space'}, {l:'Alt', w:1, m:true, c:'AltRight'}, {l:'Fn', w:1, m:true}, {l:'←', w:1, m:true, c:'ArrowLeft'}, {l:'↓', w:1, m:true, c:'ArrowDown'}, {l:'→', w:1, m:true, c:'ArrowRight'}]
 ];
+
+const U = 0.42;
+const gap = 0.04;
+
+function Key3D({ keyDef, xPos, zPos }: { keyDef: KeyDef, xPos: number, zPos: number }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const keyWidth = keyDef.w * U - gap;
+  const keyDepth = U - gap;
+
+  useFrame(() => {
+    if (groupRef.current) {
+      const isPressed = keyDef.c && pressedKeys.has(keyDef.c);
+      const targetY = isPressed ? 0.02 : 0.1; // Pressed down vs normal height
+      groupRef.current.position.y = THREE.MathUtils.lerp(groupRef.current.position.y, targetY, 0.4);
+    }
+  });
+
+  return (
+    <group ref={groupRef} position={[xPos, 0.1, zPos]}>
+      <mesh material={keyDef.m ? materialMod : materialAlpha} castShadow receiveShadow>
+        <boxGeometry args={[keyWidth, 0.2, keyDepth]} />
+      </mesh>
+      {keyDef.l && (
+        <Text
+          position={[-(keyWidth/2) + 0.04, 0.101, -(keyDepth/2) + 0.04]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          fontSize={0.06}
+          color={keyDef.m ? COLOR_TEXT_MOD : COLOR_TEXT_ALPHA}
+          anchorX="left"
+          anchorY="top"
+        >
+          {keyDef.l}
+        </Text>
+      )}
+    </group>
+  );
+}
 
 function KeyboardModel({ zoom }: { zoom: number }) {
   const groupRef = useRef<THREE.Group>(null);
@@ -39,8 +129,6 @@ function KeyboardModel({ zoom }: { zoom: number }) {
     }
   });
 
-  const U = 0.42;
-  const gap = 0.04;
   const startX = -(15 * U) / 2 + U / 2;
   const startZ = -(6 * U) / 2 + U / 2;
 
@@ -53,8 +141,6 @@ function KeyboardModel({ zoom }: { zoom: number }) {
       if (rowIndex === 1) currentZ += gap * 2; // Gap between F-row and numbers
 
       row.forEach((key, colIndex) => {
-        const keyWidth = key.w * U - gap;
-        const keyDepth = U - gap;
         const xPos = currentX + (key.w * U) / 2 - U / 2;
 
         if (key.k) {
@@ -65,23 +151,7 @@ function KeyboardModel({ zoom }: { zoom: number }) {
           );
         } else {
           result.push(
-            <group key={`${rowIndex}-${colIndex}`} position={[xPos, 0.1, currentZ]}>
-              <mesh material={key.m ? materialMod : materialAlpha} castShadow receiveShadow>
-                <boxGeometry args={[keyWidth, 0.2, keyDepth]} />
-              </mesh>
-              {key.l && (
-                <Text
-                  position={[-(keyWidth/2) + 0.04, 0.101, -(keyDepth/2) + 0.04]}
-                  rotation={[-Math.PI / 2, 0, 0]}
-                  fontSize={0.06}
-                  color={key.m ? COLOR_TEXT_MOD : COLOR_TEXT_ALPHA}
-                  anchorX="left"
-                  anchorY="top"
-                >
-                  {key.l}
-                </Text>
-              )}
-            </group>
+            <Key3D key={`${rowIndex}-${colIndex}`} keyDef={key} xPos={xPos} zPos={currentZ} />
           );
         }
         currentX += key.w * U;
@@ -103,6 +173,26 @@ function KeyboardModel({ zoom }: { zoom: number }) {
 
 export function InteractiveKeyboard() {
   const [zoom, setZoom] = useState(0);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!pressedKeys.has(e.code)) {
+        pressedKeys.add(e.code);
+        playThock();
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      pressedKeys.delete(e.code);
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   return (
     <div className="absolute inset-0 z-20">
@@ -142,7 +232,7 @@ export function InteractiveKeyboard() {
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
           </svg>
-          Drag to rotate
+          Type on your keyboard to test
         </div>
         
         <div className="flex items-center gap-4 bg-[#0A0A0C]/80 backdrop-blur-md px-6 py-3 rounded-full border border-white/10">
