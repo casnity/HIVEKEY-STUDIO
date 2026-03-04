@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useScroll, useTransform } from "motion/react";
+import { motion, useScroll } from "motion/react";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 
@@ -13,6 +13,14 @@ export function Navbar() {
       setIsScrolled(latest > 50);
     });
   }, [scrollY]);
+
+  const handleScroll = (e: React.MouseEvent<HTMLAnchorElement>, targetId: string) => {
+    e.preventDefault();
+    const target = document.getElementById(targetId);
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth" });
+    }
+  };
 
   return (
     <motion.nav
@@ -31,26 +39,26 @@ export function Navbar() {
         </div>
 
         <div className="hidden md:flex items-center space-x-8 text-sm font-medium text-white/60">
-          <Link href="#overview" className="hover:text-white transition-colors">
+          <a href="#overview" onClick={(e) => handleScroll(e, 'overview')} className="hover:text-white transition-colors cursor-pointer">
             Overview
-          </Link>
-          <Link href="#technology" className="hover:text-white transition-colors">
+          </a>
+          <a href="#technology" onClick={(e) => handleScroll(e, 'technology')} className="hover:text-white transition-colors cursor-pointer">
             Technology
-          </Link>
-          <Link href="#design" className="hover:text-white transition-colors">
+          </a>
+          <a href="#design" onClick={(e) => handleScroll(e, 'design')} className="hover:text-white transition-colors cursor-pointer">
             Design
-          </Link>
-          <Link href="#specs" className="hover:text-white transition-colors">
+          </a>
+          <a href="#specs" onClick={(e) => handleScroll(e, 'specs')} className="hover:text-white transition-colors cursor-pointer">
             Specs
-          </Link>
+          </a>
         </div>
 
         <div>
-          <Link href="#buy" className="relative overflow-hidden rounded-full px-5 py-2 text-sm font-semibold text-white transition-all hover:scale-105 active:scale-95 group block">
+          <a href="#buy" onClick={(e) => handleScroll(e, 'buy')} className="relative overflow-hidden rounded-full px-5 py-2 text-sm font-semibold text-white transition-all hover:scale-105 active:scale-95 group block cursor-pointer">
             <div className="absolute inset-0 bg-gradient-to-br from-[#FF6A00] via-[#FF2E00] to-[#B30000] opacity-90 group-hover:opacity-100 transition-opacity" />
             <div className="absolute inset-0 shadow-[0_0_20px_rgba(255,106,0,0.25)]" />
             <span className="relative z-10">Experience Hive 65</span>
-          </Link>
+          </a>
         </div>
       </div>
     </motion.nav>
